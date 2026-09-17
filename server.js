@@ -28,10 +28,7 @@ const filterLoaders = {
   contentkeeper: () => require("./filters/contentkeeper").contentkeeper,
   deledao:       () => require("./filters/deledao").deledao,
   iboss:         () => require("./filters/iboss").iboss,
-  aristotle:     () => require("./filters/aristotle").aristotlek12,
-  sophos:        () => require("./filters/sophos").sophos,
-  qustodio:      () => require("./filters/qustodio").qustodio,
-  barracuda:     () => require("./filters/barracuda").barracuda
+  aristotle:     () => require("./filters/aristotle").aristotlek12
 };
 
 const filters = {};
@@ -53,8 +50,7 @@ for (const [key, loader] of Object.entries(filterLoaders)) {
 const FILTER_ORDER = [
   "fortiguard", "lightspeed", "paloalto", "blocksiWeb", "blocksiAI",
   "linewize", "cisco", "securly", "goguardian", "lanschool",
-  "contentkeeper", "aristotle", "senso", "deledao", "iboss",
-  "sophos", "barracuda", "qustodio"
+  "contentkeeper", "aristotle", "senso", "deledao", "iboss"
 ];
 
 /* ---------- RUN ALL FILTERS FOR A DOMAIN ---------- */
@@ -203,6 +199,8 @@ server.listen(PORT, () => {
   console.log("   Filters loaded:    " + Object.keys(filters).length + " / " + FILTER_ORDER.length);
   if (missing.length) {
     console.log("   Filters missing:   " + missing.join(", "));
+  } else {
+    console.log("   Filters missing:   (none)");
   }
   console.log("   ─────────────────────────────────────────────");
   console.log("   Test:  curl -X POST http://localhost:" + PORT + "/check \\");

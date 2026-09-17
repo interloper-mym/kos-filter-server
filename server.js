@@ -1,18 +1,14 @@
 /* ============================================================
-   King of Sorrow's Filter Server
+   King of Sorrow's Filter Server — DEBUG EDITION
    Inappropriate Recycling v1 — by interloper-mym
-   File: server.js
-   Purpose: HTTP server. Loads every filter module.
-            Exposes POST /check. CORS-enabled.
+   File: server.js (debug)
+   Purpose: Same as server.js, but logs every filter's internal
+            error in full detail. Use this to diagnose failures.
    ============================================================ */
 
 const http = require("http");
-const url = require("url");
 
 /* ---------- LOAD ALL FILTERS ---------- */
-/* Each filter module exports a function. If a module is
-   missing or broken, we mark it as unavailable instead of
-   crashing the whole server. */
 const filterLoaders = {
   securly:       () => require("./filters/securly").securly,
   fortiguard:    () => require("./filters/fortiguard").fortiguard,
@@ -36,43 +32,43 @@ const missing = [];
 for (const [key, loader] of Object.entries(filterLoaders)) {
   try {
     const fn = loader();
-    if (typeof fn === "function") {
-      filters[key] = fn;
-    } else {
-      missing.push(key + " (not a function)");
-    }
+    if (typeof fn === "function") filters[key] = fn;
+    else missing.push(key + " (not a function)");
   } catch (err) {
     missing.push(key + " (" + err.message + ")");
   }
 }
 
-/* ---------- FILTER ORDER (canonical output order) ---------- */
 const FILTER_ORDER = [
   "fortiguard", "lightspeed", "paloalto", "blocksiWeb", "blocksiAI",
   "linewize", "cisco", "securly", "goguardian", "lanschool",
   "contentkeeper", "aristotle", "senso", "deledao", "iboss"
 ];
 
-/* ---------- RUN ALL FILTERS FOR A DOMAIN ---------- */
-async function runAllFilters(domain, filterList) {
+/* ---------- RUN ALL FILTERS WITH FULL DEBUG LOGGING ---------- */
+async function runAllFilters(domain) {
   const results = {};
-  const filtersToRun = filterList && filterList.length > 0
-    ? filterList.filter(f => filters[f])
-    : FILTER_ORDER.filter(f => filters[f]);
+  const debugLog = {};
 
-  await Promise.all(filtersToRun.map(async (key) => {
+  await Promise.all(FILTER_ORDER.map(async (key) => {
     const fn = filters[key];
     if (!fn) {
       results[key] = ["(no module)", null, "missing"];
+      debugLog[key] = { error: "No filter module loaded" };
       return;
     }
+    const t0 = Date.now();
+    const debug = { started: new Date().toISOString(), steps: [] };
     try {
       const result = await Promise.race([
         fn(domain),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("TIMEOUT")), 15000)
+          setTimeout(() => reject(new Error("HARD_TIMEOUT_15s")), 15000)
         )
       ]);
+      const elapsed = Date.now() - t0;
+      debug.elapsed_ms = elapsed;
+      debug.result_raw = result;
       if (Array.isArray(result)) {
         results[key] = [String(result[0] ?? "Unknown"), result[1] ?? null, result[2] || "ok"];
       } else if (typeof result === "object" && result !== null) {
@@ -84,15 +80,23 @@ async function runAllFilters(domain, filterList) {
       } else {
         results[key] = [String(result || "Unknown"), null, "ok"];
       }
+      debug.status = "ok";
     } catch (err) {
-      results[key] = ["ERROR", null, err.message];
+      const elapsed = Date.now() - t0;
+      debug.elapsed_ms = elapsed;
+      debug.status = "error";
+      debug.error_name = err.name;
+      debug.error_message = err.message;
+      debug.error_stack = (err.stack || "").split("\n").slice(0, 8);
+      results[key] = ["DEBUG_ERROR", null, err.message];
     }
+    debugLog[key] = debug;
   }));
 
-  return results;
+  return { results, debug: debugLog };
 }
 
-/* ---------- JSON RESPONSE HELPER ---------- */
+/* ---------- SEND JSON ---------- */
 function sendJSON(res, code, data) {
   res.writeHead(code, {
     "Content-Type": "application/json; charset=utf-8",
@@ -100,16 +104,15 @@ function sendJSON(res, code, data) {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization"
   });
-  res.end(JSON.stringify(data));
+  res.end(JSON.stringify(data, null, 2));
 }
 
 /* ---------- HTTP SERVER ---------- */
 const PORT = process.env.PORT || 3000;
 
 const server = http.createServer(async (req, res) => {
-  const parsed = url.parse(req.url, true);
+  const pathname = req.url.split("?")[0];
 
-  /* Preflight */
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -120,12 +123,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /* Health check */
-  if (parsed.pathname === "/" || parsed.pathname === "/health") {
+  if (pathname === "/" || pathname === "/health") {
     sendJSON(res, 200, {
       status: "ok",
       service: "kos-filter-server",
-      version: "1.0.0",
+      version: "1.0.0-debug",
       owner: "interloper-mym",
       filters_loaded: Object.keys(filters),
       filters_missing: missing,
@@ -135,32 +137,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /* POST /check */
-  if (parsed.pathname === "/check" && req.method === "POST") {
+  if (pathname === "/check" && req.method === "POST") {
     let body = "";
     req.on("data", chunk => { body += chunk; });
     req.on("end", async () => {
       let payload;
-      try {
-        payload = JSON.parse(body || "{}");
-      } catch (err) {
-        sendJSON(res, 400, { error: "Bad JSON: " + err.message });
-        return;
-      }
-
+      try { payload = JSON.parse(body || "{}"); }
+      catch (err) { sendJSON(res, 400, { error: "Bad JSON: " + err.message }); return; }
       const domain = payload.domain || payload.url;
-      const filterList = Array.isArray(payload.filters) ? payload.filters : null;
-
-      if (!domain) {
-        sendJSON(res, 400, { error: "Missing 'domain' field" });
-        return;
-      }
-
+      if (!domain) { sendJSON(res, 400, { error: "Missing 'domain' field" }); return; }
       try {
-        const results = await runAllFilters(domain, filterList);
+        const { results, debug } = await runAllFilters(domain);
         sendJSON(res, 200, {
           domain,
           results,
+          debug,
           timestamp: new Date().toISOString()
         });
       } catch (err) {
@@ -170,41 +161,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /* GET /check/:domain — convenience for quick browser tests */
-  if (parsed.pathname.startsWith("/check/") && req.method === "GET") {
-    const domain = decodeURIComponent(parsed.pathname.slice("/check/".length));
-    if (!domain) {
-      sendJSON(res, 400, { error: "Missing domain" });
-      return;
-    }
+  if (pathname.startsWith("/check/") && req.method === "GET") {
+    const domain = decodeURIComponent(pathname.slice("/check/".length));
     try {
-      const results = await runAllFilters(domain, null);
-      sendJSON(res, 200, { domain, results, timestamp: new Date().toISOString() });
+      const { results, debug } = await runAllFilters(domain);
+      sendJSON(res, 200, { domain, results, debug, timestamp: new Date().toISOString() });
     } catch (err) {
       sendJSON(res, 500, { error: err.message });
     }
     return;
   }
 
-  /* 404 */
-  sendJSON(res, 404, { error: "Not found", path: parsed.pathname });
+  sendJSON(res, 404, { error: "Not found", path: pathname });
 });
 
 server.listen(PORT, () => {
   console.log("");
-  console.log("👑 King of Sorrow's Filter Server");
-  console.log("   Inappropriate Recycling v1 — by interloper-mym");
+  console.log("👑 King of Sorrow's Filter Server — DEBUG EDITION");
   console.log("   ─────────────────────────────────────────────");
   console.log("   Listening on port: " + PORT);
   console.log("   Filters loaded:    " + Object.keys(filters).length + " / " + FILTER_ORDER.length);
-  if (missing.length) {
-    console.log("   Filters missing:   " + missing.join(", "));
-  } else {
-    console.log("   Filters missing:   (none)");
-  }
+  console.log("   Filters missing:   " + (missing.length ? missing.join(", ") : "(none)"));
   console.log("   ─────────────────────────────────────────────");
-  console.log("   Test:  curl -X POST http://localhost:" + PORT + "/check \\");
-  console.log("            -H \"Content-Type: application/json\" \\");
-  console.log("            -d '{\"domain\":\"unpkg.com\"}'");
+  console.log("   Debug: POST /check returns a `debug` object with");
+  console.log("          per-filter error stacks + elapsed times.");
   console.log("");
 });

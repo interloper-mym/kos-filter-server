@@ -54,9 +54,6 @@ async function securly(url) {
 
     steps.push("status=" + status + " catid=" + categoryid);
 
-    /* Try to get the human-readable category name from the blocked page.
-       But if we fail, we still return the raw category ID, which is
-       useful info. */
     if (isBlocked && categoryid && categoryid !== "0" && categoryid !== "-1") {
       try {
         const blockedUrl =
@@ -84,7 +81,6 @@ async function securly(url) {
         const html2 = await res2.text();
         steps.push("blocked_status=" + res2.status + " len=" + html2.length);
 
-        /* Try multiple extraction strategies */
         const m1 = html2.match(/params\[['"]categories['"]\]\s*=\s*["']([^"']+)/);
         if (m1) {
           steps.push("category_extracted=" + m1[1]);
@@ -101,7 +97,6 @@ async function securly(url) {
       }
     }
 
-    /* Fallback: return the raw broker status and category ID. */
     if (isAllow) {
       return ["Allowed", false, steps.join(" | ")];
     }

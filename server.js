@@ -17,13 +17,10 @@ const filterLoaders = {
   paloalto:      () => require("./filters/paloalto").palo,
   blocksiWeb:    () => require("./filters/blocksi").blocksiStandard,
   blocksiAI:     () => require("./filters/blocksi").blocksiAI,
-  lanschool:     () => require("./filters/lanschool").lanschool,
   linewize:      () => require("./filters/linewize").linewize,
   senso:         () => require("./filters/senso").sensocloud,
   cisco:         () => require("./filters/cisco").cisco,
-  contentkeeper: () => require("./filters/contentkeeper").contentkeeper,
   deledao:       () => require("./filters/deledao").deledao,
-  iboss:         () => require("./filters/iboss").iboss,
   aristotle:     () => require("./filters/aristotle").aristotlek12
 };
 
@@ -41,8 +38,8 @@ for (const [key, loader] of Object.entries(filterLoaders)) {
 
 const FILTER_ORDER = [
   "fortiguard", "lightspeed", "paloalto", "blocksiWeb", "blocksiAI",
-  "linewize", "cisco", "securly", "goguardian", "lanschool",
-  "contentkeeper", "aristotle", "senso", "deledao", "iboss"
+  "linewize", "cisco", "securly", "goguardian",
+  "aristotle", "senso", "deledao"
 ];
 
 /* ---------- RUN ALL FILTERS WITH FULL DEBUG LOGGING ---------- */

@@ -6,7 +6,7 @@ const lightspeedjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'json/lig
 function lightspeedCategorize(num) {
 	for (let i = 0; i < lightspeedjson.length; i++) {
 		if (lightspeedjson[i]["CategoryNumber"] == num) {
-			return [lightspeedjson[i]["CategoryName"], (lightspeedjson[i]["Allow"] == 1)]
+			return [lightspeedjson[i]["CategoryName"], (lightspeedjson[i]["Allow"] != 1)]
 		}
 	}
 	return num
